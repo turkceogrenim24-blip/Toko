@@ -88,43 +88,101 @@ if menu == "📋 Kelola Stok Barang":
     else:
         st.info("Belum ada data barang. Silakan tambahkan barang di atas.")
 # =========================================
-# MENU 2: KASIR & PENJUALAN DENGAN TOTAL HARGA
+# MENU # ==========================================
+# MENU 2: KASIR MULTI-PRODUK (KERANJANG)
 # ==========================================
 elif menu == "💰 Kasir & Penjualan":
-    st.subheader("💰 Transaksi Kasir & Hitung Total Harga")
+    st.subheader("🛒 Kasir Penjualan (Multi-Produk)")
     tabel = st.session_state.tabel_toko
-    
+
+    if "keranjang" not in st.session_state:
+        st.session_state.keranjang = []
+
     if tabel.empty:
         st.warning("Inventaris masih kosong. Tambahkan barang terlebih dahulu di menu Kelola Stok.")
     else:
-        with st.form("form_kasir"):
-            # 1. Pilih Barang
-            pilihan_barang = st.selectbox("Pilih Barang yang Dibeli", tabel["Nama Barang"].tolist())
-            
-            # Ambil harga satuan barang yang sedang dipilih dari tabel stok
-            harga_satuan = float(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Harga (Rp)"].values[0])
-            st.info(f"🏷️ Harga Satuan: **Rp {harga_satuan:,.0f}** per pcs".replace(",", "."))
-            
-            # 2. Input Jumlah Beli
-            jumlah_beli = st.number_input("Jumlah Beli (pcs)", min_value=1, value=1, step=1)
-            
-            # 3. HITUNG TOTAL HARGA SECARA OTOMATIS
-            total_harga = harga_satuan * jumlah_beli
-            
-            # Tampilkan pratinjau total harga sebelum tombol bayar ditekan
-            st.markdown(f"### 💵 Total yang Harus Dibayar: **Rp {total_harga:,.0f}**".replace(",", "."))
-            
-            proses_bayar = st.form_submit_button("✅ Konfirmasi Pembayaran & Kurangi Stok")
-            
-            if proses_bayar:
-                stok_saat_ini = int(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Stok"].values[0])
-                
-                if jumlah_beli > stok_saat_ini:
-                    st.error(f"❌ Stok tidak cukup! Sisa stok '{pilihan_barang}' tinggal {stok_saat_ini} pcs.")
+        daftar_barang = tabel["Nama Barang"].tolist()
+
+        # 1. Form tambah item ke keranjang
+        with st.form("form_tambah_keranjang", clear_on_submit=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                pilihan_barang = st.selectbox("Pilih Produk", daftar_barang)
+            with col2:
+                jumlah_beli = st.number_input("Jumlah (pcs)", min_value=1, value=1, step=1)
+
+            tambah_item = st.form_submit_button("➕ Masukkan ke Keranjang")
+
+            if tambah_item:
+                stok_tersedia = int(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Stok"].values[0])
+                harga_satuan = float(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Harga (Rp)"].values[0])
+
+                # Hitung total jumlah item ini yang sudah ada di keranjang
+                jumlah_di_keranjang = sum(
+                    item["Jumlah"] for item in st.session_state.keranjang if item["Nama Barang"] == pilihan_barang
+                )
+
+                if jumlah_di_keranjang + jumlah_beli > stok_tersedia:
+                    st.error(
+                        f"❌ Stok tidak cukup! Tersedia {stok_tersedia} pcs, di keranjang sudah {jumlah_di_keranjang} pcs."
+                    )
                 else:
-                    # Kurangi stok di tabel
-                    tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Stok"] = stok_saat_ini - jumlah_beli
-                    simpan_data()
-                    
-                    st.success(f"✅ Transaksi Berhasil!\n\nBarang: {pilihan_barang} ({jumlah_beli} pcs)\n**Total Bayar:** Rp {total_harga:,.0f}".replace(",", "."))
+                    # Gabungkan jumlah jika produk sudah ada di keranjang
+                    sudah_ada = False
+                    for item in st.session_state.keranjang:
+                        if item["Nama Barang"] == pilihan_barang:
+                            item["Jumlah"] += jumlah_beli
+                            item["Subtotal (Rp)"] = item["Jumlah"] * item["Harga Satuan (Rp)"]
+                            sudah_ada = True
+                            break
+
+                    if not sudah_ada:
+                        st.session_state.keranjang.append({
+                            "Nama Barang": pilihan_barang,
+                            "Harga Satuan (Rp)": harga_satuan,
+                            "Jumlah": jumlah_beli,
+                            "Subtotal (Rp)": harga_satuan * jumlah_beli
+                        })
+                    st.success(f"'{pilihan_barang}' ({jumlah_beli} pcs) masuk ke keranjang.")
                     st.rerun()
+
+        # 2. Tampilkan isi keranjang & proses pembayaran
+        st.markdown("### 🧾 Daftar Belanja Saat Ini")
+        if st.session_state.keranjang:
+            df_keranjang = pd.DataFrame(st.session_state.keranjang)
+            st.dataframe(df_keranjang, use_container_width=True)
+
+            total_transaksi = float(df_keranjang["Subtotal (Rp)"].sum())
+            st.markdown(f"### 💵 Total Tagihan: **Rp {total_transaksi:,.0f}**".replace(",", "."))
+
+            col_bayar, col_batal = st.columns(2)
+            with col_bayar:
+                if st.button("✅ Selesaikan Pembayaran & Potong Stok", type="primary"):
+                    # Validasi ulang stok sebelum potong
+                    stok_aman = True
+                    for item in st.session_state.keranjang:
+                        stok_kini = int(tabel.loc[tabel["Nama Barang"] == item["Nama Barang"], "Stok"].values[0])
+                        if item["Jumlah"] > stok_kini:
+                            st.error(f"❌ Stok '{item['Nama Barang']}' berubah/kurang (sisa {stok_kini} pcs).")
+                            stok_aman = False
+                            break
+
+                    if stok_aman:
+                        for item in st.session_state.keranjang:
+                            idx = tabel["Nama Barang"] == item["Nama Barang"]
+                            stok_kini = int(tabel.loc[idx, "Stok"].values[0])
+                            tabel.loc[idx, "Stok"] = stok_kini - item["Jumlah"]
+
+                        simpan_data()
+                        st.session_state.keranjang = []
+                        st.success(
+                            f"✅ Transaksi selesai! Total dibayar: **Rp {total_transaksi:,.0f}**".replace(",", ".")
+                        )
+                        st.rerun()
+
+            with col_batal:
+                if st.button("🗑️ Kosongkan Keranjang"):
+                    st.session_state.keranjang = []
+                    st.rerun()
+        else:
+            st.info("Keranjang masih kosong. Pilih produk di atas lalu klik *Masukkan ke Keranjang*.")
