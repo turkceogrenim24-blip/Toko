@@ -65,32 +65,44 @@ if menu == "📋 Kelola Stok Barang":
     else:
         st.info("Belum ada data barang. Silakan tambahkan barang di atas.")
 
-# ==========================================
-# MENU 2: KASIR & PENJUALAN
+# =========================================
+# MENU 2: KASIR & PENJUALAN DENGAN TOTAL HARGA
 # ==========================================
 elif menu == "💰 Kasir & Penjualan":
-    st.subheader("Transaksi Penjualan Kasir")
+    st.subheader("💰 Transaksi Kasir & Hitung Total Harga")
     tabel = st.session_state.tabel_toko
     
     if tabel.empty:
         st.warning("Inventaris masih kosong. Tambahkan barang terlebih dahulu di menu Kelola Stok.")
     else:
         with st.form("form_kasir"):
+            # 1. Pilih Barang
             pilihan_barang = st.selectbox("Pilih Barang yang Dibeli", tabel["Nama Barang"].tolist())
+            
+            # Ambil harga satuan barang yang sedang dipilih dari tabel stok
+            harga_satuan = float(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Harga (Rp)"].values[0])
+            st.info(f"🏷️ Harga Satuan: **Rp {harga_satuan:,.0f}** per pcs".replace(",", "."))
+            
+            # 2. Input Jumlah Beli
             jumlah_beli = st.number_input("Jumlah Beli (pcs)", min_value=1, value=1, step=1)
-            proses_bayar = st.form_submit_button("💰 Bayar & Kurangi Stok")
+            
+            # 3. HITUNG TOTAL HARGA SECARA OTOMATIS
+            total_harga = harga_satuan * jumlah_beli
+            
+            # Tampilkan pratinjau total harga sebelum tombol bayar ditekan
+            st.markdown(f"### 💵 Total yang Harus Dibayar: **Rp {total_harga:,.0f}**".replace(",", "."))
+            
+            proses_bayar = st.form_submit_button("✅ Konfirmasi Pembayaran & Kurangi Stok")
             
             if proses_bayar:
                 stok_saat_ini = int(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Stok"].values[0])
-                harga_satuan = float(tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Harga (Rp)"].values[0])
                 
                 if jumlah_beli > stok_saat_ini:
                     st.error(f"❌ Stok tidak cukup! Sisa stok '{pilihan_barang}' tinggal {stok_saat_ini} pcs.")
                 else:
-                    # Kurangi stok
+                    # Kurangi stok di tabel
                     tabel.loc[tabel["Nama Barang"] == pilihan_barang, "Stok"] = stok_saat_ini - jumlah_beli
                     simpan_data()
                     
-                    total_bayar = harga_satuan * jumlah_beli
-                    st.success(f"✅ Transaksi Berhasil!\n\n**Total yang harus dibayar:** Rp {total_bayar:,.0f}".replace(",", "."))
+                    st.success(f"✅ Transaksi Berhasil!\n\nBarang: {pilihan_barang} ({jumlah_beli} pcs)\n**Total Bayar:** Rp {total_harga:,.0f}".replace(",", "."))
                     st.rerun()
