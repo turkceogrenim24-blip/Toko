@@ -21,39 +21,58 @@ KOLOM_RIWAYAT = [
 ]
 
 
+def normalisasi_df_toko(df: pd.DataFrame) -> pd.DataFrame:
+    df_bersih = df.copy()
+    for col in KOLOM_TOKO:
+        if col not in df_bersih.columns:
+            df_bersih[col] = 0 if col != "Nama Barang" else ""
+    df_bersih = df_bersih[KOLOM_TOKO].copy()
+    df_bersih["Nama Barang"] = df_bersih["Nama Barang"].fillna("").astype(str).str.strip()
+    df_bersih = df_bersih[df_bersih["Nama Barang"] != ""].reset_index(drop=True)
+    df_bersih["Harga (Rp)"] = pd.to_numeric(df_bersih["Harga (Rp)"], errors="coerce").fillna(0)
+    df_bersih["Stok"] = pd.to_numeric(df_bersih["Stok"], errors="coerce").fillna(0).astype(int)
+    return df_bersih
+
+
+def normalisasi_df_riwayat(df: pd.DataFrame) -> pd.DataFrame:
+    df_bersih = df.copy()
+    for col in KOLOM_RIWAYAT:
+        if col not in df_bersih.columns:
+            df_bersih[col] = None
+    df_bersih = df_bersih[KOLOM_RIWAYAT].copy()
+    df_bersih["Nama Barang"] = df_bersih["Nama Barang"].fillna("").astype(str).str.strip()
+    df_bersih["Harga Satuan (Rp)"] = pd.to_numeric(
+        df_bersih["Harga Satuan (Rp)"], errors="coerce"
+    ).fillna(0)
+    df_bersih["Jumlah"] = pd.to_numeric(df_bersih["Jumlah"], errors="coerce").fillna(0).astype(int)
+    df_bersih["Subtotal (Rp)"] = pd.to_numeric(
+        df_bersih["Subtotal (Rp)"], errors="coerce"
+    ).fillna(0)
+    return df_bersih
+
+
 def muat_toko():
     """Memuat data stok toko dari CSV jika tersedia."""
     if os.path.exists(FILE_DATA):
-        df = pd.read_csv(FILE_DATA)
-        for col in KOLOM_TOKO:
-            if col not in df.columns:
-                df[col] = 0 if col != "Nama Barang" else ""
-        df = df[KOLOM_TOKO].copy()
-        df["Harga (Rp)"] = pd.to_numeric(df["Harga (Rp)"], errors="coerce").fillna(0)
-        df["Stok"] = pd.to_numeric(df["Stok"], errors="coerce").fillna(0).astype(int)
-        return df
+        return normalisasi_df_toko(pd.read_csv(FILE_DATA))
     return pd.DataFrame(columns=KOLOM_TOKO)
 
 
 def simpan_data():
     """Menyimpan data stok toko ke file CSV."""
-    st.session_state.tabel_toko[KOLOM_TOKO].to_csv(FILE_DATA, index=False)
+    normalisasi_df_toko(st.session_state.tabel_toko).to_csv(FILE_DATA, index=False)
 
 
 def muat_riwayat():
     """Memuat riwayat transaksi penjualan dari CSV jika tersedia."""
     if os.path.exists(FILE_RIWAYAT):
-        df = pd.read_csv(FILE_RIWAYAT)
-        for col in KOLOM_RIWAYAT:
-            if col not in df.columns:
-                df[col] = None
-        return df[KOLOM_RIWAYAT].copy()
+        return normalisasi_df_riwayat(pd.read_csv(FILE_RIWAYAT))
     return pd.DataFrame(columns=KOLOM_RIWAYAT)
 
 
 def simpan_riwayat(df_riwayat):
     """Menyimpan riwayat transaksi penjualan ke file CSV."""
-    df_riwayat[KOLOM_RIWAYAT].to_csv(FILE_RIWAYAT, index=False)
+    normalisasi_df_riwayat(df_riwayat).to_csv(FILE_RIWAYAT, index=False)
 
 
 if "tabel_toko" not in st.session_state:
@@ -67,7 +86,12 @@ if "keranjang" not in st.session_state:
 
 menu = st.sidebar.radio(
     "Pilih Menu:",
-    ["📋 Kelola Stok Barang", "💰 Kasir & Penjualan", "📅 Riwayat Penjualan"],
+    [
+        "📋 Kelola Stok Barang",
+        "💰 Kasir & Penjualan",
+        "📅 Riwayat Penjualan",
+        "📂 Backup & Muat CSV",
+    ],
 )
 
 # ==========================================
@@ -309,3 +333,104 @@ elif menu == "📅 Riwayat Penjualan":
         )
     else:
         st.info("Belum ada transaksi yang tercatat di `riwayat_penjualan.csv`.")
+
+# ==========================================
+# MENU 4: BACKUP & MUAT ULANG CSV DARI HP
+# ==========================================
+elif menu == "📂 Backup & Muat CSV":
+    st.subheader("📂 Simpan & Muat Ulang File CSV dari Penyimpanan HP")
+    st.caption(
+        "Unduh file CSV ke HP secara berkala sebagai arsip lokal, lalu unggah kembali di sini jika aplikasi baru di-restart."
+    )
+
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        st.download_button(
+            label="📥 Unduh Stok Toko (data_toko.csv)",
+            data=normalisasi_df_toko(st.session_state.tabel_toko).to_csv(index=False).encode("utf-8"),
+            file_name=FILE_DATA,
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with col_dl2:
+        st.download_button(
+            label="📥 Unduh Riwayat Penjualan (riwayat_penjualan.csv)",
+            data=normalisasi_df_riwayat(st.session_state.riwayat_penjualan)
+            .to_csv(index=False)
+            .encode("utf-8"),
+            file_name=FILE_RIWAYAT,
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("---")
+    st.markdown("### ⬆️ Muat Ulang Stok Barang (`data_toko.csv`) dari HP")
+    file_stok_upload = st.file_uploader(
+        "Pilih file CSV stok dari penyimpanan HP",
+        type=["csv"],
+        key="upload_stok_csv",
+    )
+    if file_stok_upload is not None:
+        try:
+            df_stok_baru = normalisasi_df_toko(pd.read_csv(file_stok_upload))
+            st.dataframe(df_stok_baru.head(10), use_container_width=True)
+            mode_stok = st.radio(
+                "Mode pemuatan stok:",
+                ["Timpa data stok saat ini", "Gabungkan / tambahkan dengan stok saat ini"],
+                key="mode_stok_radio",
+            )
+            if st.button("✅ Terapkan Data Stok CSV", type="primary"):
+                if mode_stok == "Timpa data stok saat ini":
+                    st.session_state.tabel_toko = df_stok_baru
+                else:
+                    gabungan = pd.concat(
+                        [st.session_state.tabel_toko, df_stok_baru], ignore_index=True
+                    )
+                    gabungan = gabungan.groupby("Nama Barang", as_index=False).agg({
+                        "Harga (Rp)": "last",
+                        "Stok": "sum",
+                    })
+                    st.session_state.tabel_toko = normalisasi_df_toko(gabungan)
+
+                st.session_state.keranjang = []
+                simpan_data()
+                st.success("✅ Data stok toko berhasil dimuat dan disimpan!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal membaca file CSV stok: {e}")
+
+    st.markdown("---")
+    st.markdown("### ⬆️ Muat Ulang Riwayat Penjualan (`riwayat_penjualan.csv`) dari HP")
+    file_riwayat_upload = st.file_uploader(
+        "Pilih file CSV riwayat penjualan dari penyimpanan HP",
+        type=["csv"],
+        key="upload_riwayat_csv",
+    )
+    if file_riwayat_upload is not None:
+        try:
+            df_riwayat_baru = normalisasi_df_riwayat(pd.read_csv(file_riwayat_upload))
+            st.dataframe(df_riwayat_baru.head(10), use_container_width=True)
+            mode_riwayat = st.radio(
+                "Mode pemuatan riwayat:",
+                ["Gabungkan (tanpa duplikat ID Transaksi & barang)", "Timpa seluruh riwayat saat ini"],
+                key="mode_riwayat_radio",
+            )
+            if st.button("✅ Terapkan Riwayat Penjualan CSV", type="primary"):
+                if mode_riwayat.startswith("Gabungkan"):
+                    gabungan_log = pd.concat(
+                        [st.session_state.riwayat_penjualan, df_riwayat_baru],
+                        ignore_index=True,
+                    )
+                    gabungan_log = gabungan_log.drop_duplicates(
+                        subset=["ID Transaksi", "Nama Barang", "Jumlah", "Subtotal (Rp)"],
+                        keep="last",
+                    ).reset_index(drop=True)
+                    st.session_state.riwayat_penjualan = normalisasi_df_riwayat(gabungan_log)
+                else:
+                    st.session_state.riwayat_penjualan = df_riwayat_baru
+
+                simpan_riwayat(st.session_state.riwayat_penjualan)
+                st.success("✅ Riwayat penjualan berhasil dimuat dan disimpan!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal membaca file CSV riwayat: {e}")
