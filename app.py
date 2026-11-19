@@ -184,14 +184,13 @@ elif menu == "💰 Kasir & Penjualan":
             col_bayar, col_batal = st.columns(2)
             with col_bayar:
                 if st.button("✅ Selesaikan Pembayaran & Potong Stok", type="primary"):
-                    # Validasi ulang stok sebelum potong
-                    stok_aman = True
-                    for item in st.session_state.keranjang:
-                        stok_kini = int(tabel.loc[tabel["Nama Barang"] == item["Nama Barang"], "Stok"].values[0])
-                        if item["Jumlah"] > stok_kini:
-                            st.error(f"❌ Stok '{item['Nama Barang']}' berubah/kurang (sisa {stok_kini} pcs).")
-                            stok_aman = False
-                            break
+                    # isi kode bayar di sini (menjorok 8 spasi dari kiri)
+                    ...
+
+            with col_batal:
+                if st.button("🗑️ Kosongkan Keranjang"):
+                    st.session_state.keranjang = []
+                    st.rerun()
 
                     if stok_aman: waktu_sekarang = datetime.now()
     id_transaksi = waktu_sekarang.strftime("TRX-%Y%m%d-%H%M%S")
