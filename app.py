@@ -8,7 +8,33 @@ st.title("📦 Aplikasi Pencatatan & Kasir Toko Sederhana")
 
 # File penyimpanan data lokal
 FILE_DATA = "data_toko.csv"
+from datetime import datetime
 
+FILE_RIWAYAT = "riwayat_penjualan.csv"
+KOLOM_RIWAYAT = [
+    "ID Transaksi",
+    "Tanggal",
+    "Waktu",
+    "Nama Barang",
+    "Harga Satuan (Rp)",
+    "Jumlah",
+    "Subtotal (Rp)"
+]
+
+def muat_riwayat():
+    if os.path.exists(FILE_RIWAYAT):
+        df = pd.read_csv(FILE_RIWAYAT)
+        for col in KOLOM_RIWAYAT:
+            if col not in df.columns:
+                df[col] = None
+        return df[KOLOM_RIWAYAT]
+    return pd.DataFrame(columns=KOLOM_RIWAYAT)
+
+def simpan_riwayat(df_riwayat):
+    df_riwayat.to_csv(FILE_RIWAYAT, index=False)
+
+if "riwayat_penjualan" not in st.session_state:
+    st.session_state.riwayat_penjualan = muat_riwayat()
 # Inisialisasi Session State & Data
 if 'tabel_toko' not in st.session_state:
     if os.path.exists(FILE_DATA):
@@ -167,22 +193,74 @@ elif menu == "💰 Kasir & Penjualan":
                             stok_aman = False
                             break
 
-                    if stok_aman:
-                        for item in st.session_state.keranjang:
-                            idx = tabel["Nama Barang"] == item["Nama Barang"]
-                            stok_kini = int(tabel.loc[idx, "Stok"].values[0])
-                            tabel.loc[idx, "Stok"] = stok_kini - item["Jumlah"]
+                    if stok_aman: waktu_sekarang = datetime.now()
+    id_transaksi = waktu_sekarang.strftime("TRX-%Y%m%d-%H%M%S")
+    tanggal_str = waktu_sekarang.strftime("%Y-%m-%d")
+    jam_str = waktu_sekarang.strftime("%H:%M:%S")
 
-                        simpan_data()
-                        st.session_state.keranjang = []
-                        st.success(
-                            f"✅ Transaksi selesai! Total dibayar: **Rp {total_transaksi:,.0f}**".replace(",", ".")
-                        )
-                        st.rerun()
+    baris_transaksi_baru = []
+    for item in st.session_state.keranjang:
+        idx = tabel["Nama Barang"] == item["Nama Barang"]
+        stok_kini = int(tabel.loc[idx, "Stok"].values[0])
+        tabel.loc[idx, "Stok"] = stok_kini - item["Jumlah"]
 
+        baris_transaksi_baru.append({
+            "ID Transaksi": id_transaksi,
+            "Tanggal": tanggal_str,
+            "Waktu": jam_str,
+            "Nama Barang": item["Nama Barang"],
+            "Harga Satuan (Rp)": item["Harga Satuan (Rp)"],
+            "Jumlah": item["Jumlah"],
+            "Subtotal (Rp)": item["Subtotal (Rp)"]
+        })
+
+    simpan_data()
+
+    df_baru = pd.DataFrame(baris_transaksi_baru, columns=KOLOM_RIWAYAT)
+    st.session_state.riwayat_penjualan = pd.concat(
+        [st.session_state.riwayat_penjualan, df_baru],
+        ignore_index=True
+    )
+    simpan_riwayat(st.session_state.riwayat_penjualan)
+
+    st.session_state.keranjang = []
+    st.success(
+        f"✅ Transaksi `{id_transaksi}` tersimpan! Total dibayar: **Rp {total_transaksi:,.0f}**".replace(",", ".")
+    )
+    st.rerun()
             with col_batal:
                 if st.button("🗑️ Kosongkan Keranjang"):
                     st.session_state.keranjang = []
                     st.rerun()
         else:
             st.info("Keranjang masih kosong. Pilih produk di atas lalu klik *Masukkan ke Keranjang*.")
+st.markdown("### 📅 Rekap Penjualan Harian")
+df_log = st.session_state.riwayat_penjualan.copy()
+
+if not df_log.empty:
+    tanggal_hari_ini = datetime.now().strftime("%Y-%m-%d")
+    daftar_tanggal = sorted(df_log["Tanggal"].dropna().unique().tolist(), reverse=True)
+    default_idx = daftar_tanggal.index(tanggal_hari_ini) if tanggal_hari_ini in daftar_tanggal else 0
+
+    tanggal_pilih = st.selectbox("Pilih Tanggal Laporan", daftar_tanggal, index=default_idx)
+    df_harian = df_log[df_log["Tanggal"] == tanggal_pilih].copy()
+
+    omzet_harian = pd.to_numeric(df_harian["Subtotal (Rp)"], errors="coerce").fillna(0).sum()
+    jumlah_struk = df_harian["ID Transaksi"].nunique()
+    total_item_terjual = pd.to_numeric(df_harian["Jumlah"], errors="coerce").fillna(0).sum()
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("💵 Omzet Harian", f"Rp {omzet_harian:,.0f}".replace(",", "."))
+    k2.metric("🧾 Jumlah Transaksi", f"{jumlah_struk} struk")
+    k3.metric("📦 Item Terjual", f"{int(total_item_terjual)} pcs")
+
+    st.dataframe(df_harian, use_container_width=True)
+
+    st.download_button(
+        label=f"📥 Unduh Riwayat ({tanggal_pilih}).csv",
+        data=df_harian.to_csv(index=False).encode("utf-8"),
+        file_name=f"penjualan_{tanggal_pilih}.csv",
+        mime="text/csv"
+    )
+else:
+    st.info("Belum ada transaksi yang tercatat di `riwayat_penjualan.csv`.")
