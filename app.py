@@ -23,48 +23,70 @@ def simpan_data():
 # Navigasi Menu Sidebar
 menu = st.sidebar.radio("Pilih Menu:", ["📋 Kelola Stok Barang", "💰 Kasir & Penjualan"])
 
-# ==========================================
-# MENU 1: KELOLA STOK BARANG
+# =================# ==========================================
+# MENU 1: KELOLA STOK BARANG + TOTAL HARGA STOK
 # ==========================================
 if menu == "📋 Kelola Stok Barang":
     st.subheader("Tambah & Kelola Barang Toko")
     
     with st.form("form_tambah_barang"):
         nama_barang = st.text_input("Nama Barang")
-        harga_barang = st.number_input("Harga Jual (Rp)", min_value=0, step=500)
+        harga_barang = st.number_input("Harga Satuan (Rp)", min_value=0, step=500)
         jumlah_stok = st.number_input("Jumlah Stok", min_value=0, step=1)
         submitted = st.form_submit_button("💾 Simpan Barang")
         
         if submitted and nama_barang:
             tabel = st.session_state.tabel_toko
             if not tabel.empty and nama_barang in tabel["Nama Barang"].values:
-                # Update stok jika barang sudah ada
                 tabel.loc[tabel["Nama Barang"] == nama_barang, "Stok"] += jumlah_stok
                 tabel.loc[tabel["Nama Barang"] == nama_barang, "Harga (Rp)"] = harga_barang
                 st.success(f"Stok barang '{nama_barang}' berhasil diperbarui!")
             else:
-                # Tambah baris baru jika belum ada
-                barang_baru = pd.DataFrame([{"Nama Barang": nama_barang, "Harga (Rp)": harga_barang, "Stok": jumlah_stok}])
+                barang_baru = pd.DataFrame([{
+                    "Nama Barang": nama_barang,
+                    "Harga (Rp)": harga_barang,
+                    "Stok": jumlah_stok
+                }])
                 st.session_state.tabel_toko = pd.concat([tabel, barang_baru], ignore_index=True)
                 st.success(f"Barang baru '{nama_barang}' berhasil ditambahkan!")
             simpan_data()
 
-    st.markdown("### 📊 Daftar Inventaris Toko")
+    st.markdown("### 📊 Daftar Inventaris & Total Nilai Stok")
     if not st.session_state.tabel_toko.empty:
-        # Tabel interaktif yang bisa langsung diedit
-        tabel_terupdate = st.data_editor(st.session_state.tabel_toko, num_rows="dynamic", use_container_width=True)
-        st.session_state.tabel_toko = tabel_terupdate
+        df_tampil = st.session_state.tabel_toko.copy()
+        df_tampil["Harga (Rp)"] = pd.to_numeric(df_tampil["Harga (Rp)"], errors="coerce").fillna(0)
+        df_tampil["Stok"] = pd.to_numeric(df_tampil["Stok"], errors="coerce").fillna(0)
+        
+        # Hitung total harga per barang dan keseluruhan stok
+        df_tampil["Total Harga Stok (Rp)"] = df_tampil["Harga (Rp)"] * df_tampil["Stok"]
+        total_semua_stok = df_tampil["Total Harga Stok (Rp)"].sum()
+        total_unit_barang = int(df_tampil["Stok"].sum())
+
+        col1, col2 = st.columns(2)
+        col1.metric("💰 Total Nilai Seluruh Stok", f"Rp {total_semua_stok:,.0f}".replace(",", "."))
+        col2.metric("📦 Total Unit Barang Tersedia", f"{total_unit_barang} pcs")
+
+        # Tampilkan tabel (kolom Total Harga Stok dihitung otomatis sebelum disimpan)
+        tabel_edit = st.data_editor(
+            df_tampil[["Nama Barang", "Harga (Rp)", "Stok", "Total Harga Stok (Rp)"]],
+            num_rows="dynamic",
+            disabled=["Total Harga Stok (Rp)"],
+            use_container_width=True
+        )
+        
+        # Simpan kembali hanya kolom utama agar struktur CSV tetap bersih
+        tabel_edit["Total Harga Stok (Rp)"] = pd.to_numeric(tabel_edit["Harga (Rp)"], errors="coerce").fillna(0) * pd.to_numeric(tabel_edit["Stok"], errors="coerce").fillna(0)
+        st.session_state.tabel_toko = tabel_edit[["Nama Barang", "Harga (Rp)", "Stok"]].copy()
         simpan_data()
         
         st.download_button(
             label="📥 Download Data Toko (.csv)",
-            data=st.session_state.tabel_toko.to_csv(index=False).encode('utf-8'),
+            data=tabel_edit.to_csv(index=False).encode('utf-8'),
             file_name="data_toko.csv",
             mime="text/csv"
         )
     else:
         st.info("Belum ada data barang. Silakan tambahkan barang di atas.")
-
 # =========================================
 # MENU 2: KASIR & PENJUALAN DENGAN TOTAL HARGA
 # ==========================================
